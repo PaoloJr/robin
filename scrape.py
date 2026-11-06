@@ -14,6 +14,10 @@ from urllib3.util.retry import Retry
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import time
+import json
+import hashlib
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -550,6 +554,37 @@ def _record(status, title, text="", http_status=None, detail="", links=None):
     }
 
 
+DUMP_DIR = "/app/investigations/scraped"
+
+def _save_scraped_page(url, final_url, title, html, text, links):
+    try:
+        os.makedirs(DUMP_DIR, exist_ok=True)
+        # Create a safe, unique filename using timestamp + URL hash
+        url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+        ts = int(time.time() * 1000)
+        base_path = os.path.join(DUMP_DIR, f"{ts}_{url_hash}")
+
+        # 1. Save metadata and full extracted text (pre-8k truncation)
+        meta = {
+            "requested_url": url,
+            "final_url": final_url,
+            "title": title,
+            "extracted_text": text,
+            "onion_links": links,
+            "timestamp": ts,
+        }
+        with open(f"{base_path}.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+
+        # 2. Save the raw HTML
+        with open(f"{base_path}.html", "w", encoding="utf-8") as f:
+            f.write(html)
+
+        print(f"[SAVED] {url} -> {base_path}.json/.html", flush=True)
+    except Exception as e:
+        print(f"[SAVE ERROR] {url}: {e}", flush=True)
+
+
 def scrape_single_detailed(url_data, allow_clearweb=False):
     """Scrape one URL over Tor and return ``(url, record)``.
 
@@ -622,6 +657,7 @@ def scrape_single_detailed(url_data, allow_clearweb=False):
         # against where it was actually read from rather than where the
         # request started.
         links = extract_onion_links(html, final_url or url)
+        _save_scraped_page(url, final_url, title, html, text, links)
         return url, _record(STATUS_OK, title, text="{} - {}".format(title, text),
                             http_status=200, links=links)
     except Exception as exc:
@@ -683,7 +719,11 @@ def scrape_multiple_detailed(urls_data, max_workers=5, max_return_chars=None,
                 if url:
                     results[url] = _record(STATUS_ERROR, title, detail=str(exc)[:200])
                 continue
-
+    os.makedirs("/app/investigations", exist_ok=True)
+    dump_path = f"/app/investigations/batch_{int(time.time())}.json"
+    with open(dump_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+    print(f"Saved batch of {len(results)} results to {dump_path}", flush=True)
     return results
 
 
