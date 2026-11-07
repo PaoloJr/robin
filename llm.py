@@ -19,9 +19,23 @@ from typing import Optional
 import logging
 
 import warnings
+import os
+import time
 
 warnings.filterwarnings("ignore")
 
+LLM_DUMP_DIR = "/app/investigations/llm_traces"
+
+def _llm_save_trace(stage, payload):
+    try:
+        os.makedirs(LLM_DUMP_DIR, exist_ok=True)
+        ts = int(time.time() * 1000)
+        path = os.path.join(LLM_DUMP_DIR, f"{ts}_{stage}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+        print(f"[llm.py save_trace saved] {stage} -> {path}", flush=True)
+    except Exception as e:
+        print(f"[llm.py save_trace error] {stage}: {e}", flush=True)
 
 def get_llm(model_choice, cfg: Optional[RobinConfig] = None):
     """Build a chat client for `model_choice`.
@@ -107,11 +121,22 @@ def refine_query(llm, user_input):
     )
     chain = prompt_template | llm | response_text
     refined = chain.invoke({"query": user_input})
+    fallback_used = False
+    final_query = refined
     if not refined.strip() or any(identifier not in refined
                                   for identifier in _QUERY_IDENTIFIER_RE.findall(user_input)):
         logging.getLogger(__name__).warning("Model refinement lost query content; using the original query.")
-        return user_input
-    return refined
+        fallback_used = True
+        final_query = user_input
+
+    _llm_save_trace("0_refine_query", {
+        "user_input": user_input,
+        "system_prompt": system_prompt,
+        "llm_raw_refined": refined,
+        "fallback_used": fallback_used,
+        "final_query_used": final_query
+    })
+    return final_query
 
 
 # A range lives on one line, so in "- 3\n- 9" the bullet hyphen is not read
@@ -228,6 +253,18 @@ def filter_results_detailed(llm, query, results, limit=20):
 
     top_results = [results[i - 1] for i in parsed_indices[:limit]]
 
+    selected_set = set(parsed_indices[:limit])
+    rejected_results = [r for idx, r in enumerate(results, 1) if idx not in selected_set]
+    _llm_save_trace("1_filter_results", {
+        "query": query,
+        "limit": limit,
+        "llm_input_list": final_str,
+        "llm_raw_reply": result_indices,
+        "selected_indices": parsed_indices[:limit],
+        "selected_results": top_results,
+        "rejected_results": rejected_results,
+    })
+
     return top_results, result_indices
 
 
@@ -314,7 +351,17 @@ def generate_summary(llm, query, content, preset="threat_intel", custom_instruct
         [("system", system_prompt), ("user", "{content}")]
     )
     chain = prompt_template | llm | response_text
-    return chain.invoke(invoke_vars)
+
+    summary_output = chain.invoke(invoke_vars)
+    _llm_save_trace("2_generate_summary", {
+        "query": query,
+        "preset": preset,
+        "custom_instructions": custom_instructions,
+        "system_prompt": system_prompt,
+        "fenced_Input_content": invoke_vars.get("content"),
+        "llm_summary_output": summary_output,
+    })
+    return summary_output
 
 
 # --- Conversational follow-up ---
@@ -472,4 +519,11 @@ def suggest_pivots(llm, query, content, preset="threat_intel", max_pivots=5):
     for p in pivots:
         if isinstance(p, str) and p.strip():
             cleaned.append(p.strip())
+
+    _llm_save_trace("3_suggest_pivots", {
+        "query": query,
+        "preset": preset,
+        "llm_raw_reply": raw,
+        "parsed_pivots": cleaned[:max_pivots],
+    })
     return cleaned[:max_pivots]

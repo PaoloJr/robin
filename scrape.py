@@ -580,9 +580,9 @@ def _save_scraped_page(url, final_url, title, html, text, links):
         with open(f"{base_path}.html", "w", encoding="utf-8") as f:
             f.write(html)
 
-        print(f"[SAVED] {url} -> {base_path}.json/.html", flush=True)
+        print(f"[scrape.py scraped_page save] {url} -> {base_path}.json/.html", flush=True)
     except Exception as e:
-        print(f"[SAVE ERROR] {url}: {e}", flush=True)
+        print(f"[scrape.py scraped_page error] {url}: {e}", flush=True)
 
 
 def scrape_single_detailed(url_data, allow_clearweb=False):
@@ -723,7 +723,7 @@ def scrape_multiple_detailed(urls_data, max_workers=5, max_return_chars=None,
     dump_path = f"/app/investigations/batch_{int(time.time())}.json"
     with open(dump_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    print(f"Saved batch of {len(results)} results to {dump_path}", flush=True)
+    print(f"[scrape.py scrape_multiple batch] of {len(results)} results to {dump_path}", flush=True)
     return results
 
 

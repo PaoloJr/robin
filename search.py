@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import json
+import os
+import time
 
 # Shared with the scraper, so the Tor proxy and body handling are defined once.
 from scrape import (TOR_PROXIES, decode_capped, get_over_tor, no_redirect_target,
@@ -370,6 +373,28 @@ def get_search_results_detailed(refined_query, max_workers=5, per_host_limit=Non
 
     def count(status):
         return sum(1 for record in engines if record["status"] == status)
+    try:
+        search_dump_dir = "/app/investigations/searches"
+        os.makedirs(search_dump_dir, exist_ok=True)
+        ts = int(time.time() * 1000)
+        dump_file = os.path.join(search_dump_dir, f"search_{ts}.json")
+        
+        search_payload = {
+            "refined_query": refined_query,
+            "encoded_query": query,
+            "timestamp": ts,
+            "kept_results": kept,
+            # Pages that were found & safe, but dropped due to per-host limits:
+            "all_deduped_uncapped": deduped,
+            # Full engine records WITH their "links" list intact:
+            "engines_full_provenance": engines,
+        }
+        with open(dump_file, "w", encoding="utf-8") as f:
+            json.dump(search_payload, f, indent=2, ensure_ascii=False)
+        print(f"[search.py search_result save] {refined_query} -> {dump_file} ({len(deduped)} total, {len(kept)} kept)", flush=True)
+
+    except Exception as e:
+        print(f"[search.py search_result error] {e}", flush=True)
 
     return {
         "results": kept,
