@@ -25,6 +25,8 @@ from llm_utils import BufferedStreamingHandler, response_text
 from prompts import PRESETS
 from scrape import scrape_multiple
 from search import engines_unreachable, get_search_results_detailed
+from pathlib import Path
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +149,31 @@ def _preset_label(preset: str) -> str:
 def _now() -> str:
     return datetime.now().isoformat()
 
+PIPELINE_DUMP_FILE = "/app/investigations/"
+
+def _save_stage_dump(stage_name: str, inv: Investigation) -> None:
+    ts = int(datetime.now().timestamp() * 1000)
+    dump_file = Path(PIPELINE_DUMP_FILE) / "pipeline" / f"{ts}_{stage_name}.json"
+    record = inv.to_record()
+    data = {
+        "stage": stage_name,
+        **record,
+        "search_stats": inv.search_stats,
+        "results": inv.results,
+        "scraped": inv.scraped,
+        "saved_as": inv.saved_as,
+    }
+    try:
+        dump_file.parent.mkdir(parents=True, exist_ok=True)
+        dump_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(
+            f"[pipeline.py {stage_name} save] {inv.refined or inv.query} -> {dump_file} "
+            f"({record['results_count']} results, {len(inv.filtered)} filtered, "
+            f"{record['scraped_count']} scraped, status={inv.status})",
+            flush=True,
+        )
+    except Exception as exc:
+        print("Failed to save pipeline dump at %s: %s", stage_name, exc)
 
 def run_investigation(cfg: Optional[RobinConfig],
                       query: str,
@@ -191,6 +218,7 @@ def run_investigation(cfg: Optional[RobinConfig],
         llm = build_llm()
     except Exception as exc:
         raise PipelineError("load_llm", exc) from exc
+    _save_stage_dump("load_llm", inv)
 
     # Stage 2 - refine the query
     stage("refine")
@@ -198,6 +226,7 @@ def run_investigation(cfg: Optional[RobinConfig],
         inv.refined = refine_query(llm, query)
     except Exception as exc:
         raise PipelineError("refine", exc) from exc
+    _save_stage_dump("refine", inv)
 
     # Stage 3 - search. The `+` encoding lives in the search layer, so this
     # hands over the refined query verbatim.
@@ -211,12 +240,16 @@ def run_investigation(cfg: Optional[RobinConfig],
         raise PipelineError("search", exc) from exc
 
     if not inv.results:
-        return _finish(inv, STATUS_ENGINES_UNREACHABLE
-                       if engines_unreachable(inv.search_stats) else STATUS_NO_RESULTS)
+        _finish(inv, STATUS_ENGINES_UNREACHABLE if engines_unreachable(inv.search_stats) else STATUS_NO_RESULTS)
+        _save_stage_dump("search", inv)
+        return inv
+        # return _finish(inv, STATUS_ENGINES_UNREACHABLE
+        #                if engines_unreachable(inv.search_stats) else STATUS_NO_RESULTS)
 
     # The user's cap applies before the model is asked to rank anything.
     if len(inv.results) > max_results:
         inv.results = inv.results[:max_results]
+    _save_stage_dump("search", inv)
 
     # Stage 4 - filter
     stage("filter")
@@ -229,10 +262,14 @@ def run_investigation(cfg: Optional[RobinConfig],
     if not inv.filtered:
         # Nothing on topic. Robin stops here on purpose rather than summarizing
         # unrelated pages.
-        return _finish(inv, STATUS_NOTHING_RELEVANT)
+        _finish(inv, STATUS_NOTHING_RELEVANT)
+        _save_stage_dump("filter", inv)
+        return inv
+        # return _finish(inv, STATUS_NOTHING_RELEVANT)
 
     if len(inv.filtered) > max_scrape:
         inv.filtered = inv.filtered[:max_scrape]
+    _save_stage_dump("filter", inv)
 
     # Stage 5 - scrape
     stage("scrape")
@@ -248,7 +285,11 @@ def run_investigation(cfg: Optional[RobinConfig],
     if not inv.scraped:
         # Not one kept page could be read over Tor. No summary, no pivots, no
         # save: there is nothing to write them from.
-        return _finish(inv, STATUS_NOTHING_READABLE)
+        _finish(inv, STATUS_NOTHING_READABLE)
+        _save_stage_dump("scrape", inv)
+        return inv
+        # return _finish(inv, STATUS_NOTHING_READABLE)
+    _save_stage_dump("scrape", inv)
 
     # Stage 6 - summarize, streaming through the caller's callback
     stage("summarize")
@@ -273,6 +314,7 @@ def run_investigation(cfg: Optional[RobinConfig],
     inv.summary = streamed_text if streamed_text.strip() else response_text(returned)
     if not inv.summary.strip():
         raise PipelineError("summarize", RuntimeError("the model returned an empty report"))
+    _save_stage_dump("summarize", inv)
 
     # Pivots are a convenience and never block a finished investigation. A
     # fresh client, so the structured JSON is not streamed to the caller.
@@ -283,16 +325,23 @@ def run_investigation(cfg: Optional[RobinConfig],
     except Exception as exc:
         logger.warning("Pivot suggestions failed (%s).", redact_secrets(exc, cfg)[:200])
         inv.pivots = []
+    _save_stage_dump("pivots", inv)
 
     # The MCP server passes save=False and saves the finished run itself,
     # through the same scrubbing, bounds and per-session allowance as its save
     # tool. The UI keeps the default and saves here.
     if not save:
-        return _finish(inv, STATUS_OK)
+        _finish(inv, STATUS_OK)
+        _save_stage_dump("save", inv)
+        return inv
+        # return _finish(inv, STATUS_OK)
 
     stage("save")
     _finish(inv, STATUS_OK)
-    return store.save_investigation(inv, investigations_dir=investigations_dir, cfg=cfg)
+    inv = store.save_investigation(inv, investigations_dir=investigations_dir, cfg=cfg)
+    _save_stage_dump("save", inv)
+    return inv
+    # return store.save_investigation(inv, investigations_dir=investigations_dir, cfg=cfg)
 
 
 def _finish(inv: Investigation, status: str) -> Investigation:
