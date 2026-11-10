@@ -382,6 +382,7 @@ def get_search_results_detailed(refined_query, max_workers=5, per_host_limit=Non
         search_payload = {
             "refined_query": refined_query,
             "encoded_query": query,
+            "engines_queried": len(DEFAULT_SEARCH_ENGINES),
             "engines_answered": count(ENGINE_OK),
             "engines_empty": count(ENGINE_EMPTY),
             "engines_failed": count(ENGINE_FAILED),
@@ -390,11 +391,14 @@ def get_search_results_detailed(refined_query, max_workers=5, per_host_limit=Non
             "results_after_dedup": len(deduped),
             "results_kept_after_limit": len(kept),
             "distinct_hosts": len({_result_host(r.get("link")) for r in kept}),
-            "kept_results": kept,
-            # Pages that were found & safe, but dropped due to per-host limits:
+            "results_kept": kept,
             "all_deduped_uncapped": deduped,
-            # Full engine records WITH their "links" list intact:
-            "engines_full_provenance": engines,
+            # Pages that were found & safe, but dropped due to per-host limits:
+            "per_host_limit": limit,
+            # Per engine, in the order SEARCH_ENGINES lists them. The links
+            # themselves are in "results", not repeated here.
+            "engines": [{k: v for k, v in record.items() if k != "links"}
+                        for record in engines],
         }
         with open(dump_file, "w", encoding="utf-8") as f:
             json.dump(search_payload, f, indent=2, ensure_ascii=False)

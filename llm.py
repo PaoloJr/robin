@@ -257,6 +257,9 @@ def filter_results_detailed(llm, query, results, limit=20):
     rejected_results = [r for idx, r in enumerate(results, 1) if idx not in selected_set]
     _llm_save_trace("1_filter_results", {
         "query": query,
+        "count_selected_indices": len(parsed_indices[:limit]),
+        "count_selected_results": len(top_results),
+        "count_rejected_results": len(rejected_results),
         "limit": limit,
         "llm_input_list": final_str,
         "llm_raw_reply": result_indices,
