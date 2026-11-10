@@ -382,7 +382,14 @@ def get_search_results_detailed(refined_query, max_workers=5, per_host_limit=Non
         search_payload = {
             "refined_query": refined_query,
             "encoded_query": query,
-            "timestamp": ts,
+            "engines_answered": count(ENGINE_OK),
+            "engines_empty": count(ENGINE_EMPTY),
+            "engines_failed": count(ENGINE_FAILED),
+            "results_raw": len(raw),
+            "results_dropped_abuse": len(raw) - len(clean),
+            "results_after_dedup": len(deduped),
+            "results_kept_after_limit": len(kept),
+            "distinct_hosts": len({_result_host(r.get("link")) for r in kept}),
             "kept_results": kept,
             # Pages that were found & safe, but dropped due to per-host limits:
             "all_deduped_uncapped": deduped,

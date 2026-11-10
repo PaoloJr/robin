@@ -719,8 +719,8 @@ def scrape_multiple_detailed(urls_data, max_workers=5, max_return_chars=None,
                 if url:
                     results[url] = _record(STATUS_ERROR, title, detail=str(exc)[:200])
                 continue
-    os.makedirs("/app/investigations", exist_ok=True)
-    dump_path = f"/app/investigations/batch_{int(time.time())}.json"
+    os.makedirs(DUMP_DIR, exist_ok=True)
+    dump_path = f"{DUMP_DIR}/batch_{int(time.time())}.json"
     with open(dump_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     print(f"[scrape.py scrape_multiple batch] of {len(results)} results to {dump_path}", flush=True)
