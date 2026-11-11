@@ -1,3 +1,4 @@
+from codecs import encode
 import requests
 import random, re
 from urllib.parse import urlparse, parse_qs, parse_qsl, urlencode, unquote, quote_plus
@@ -331,7 +332,6 @@ def _cap_per_host(results, per_host_limit):
         kept.append(res)
     return kept
 
-
 def encode_query(refined_query):
     """Make a refined query safe to drop into an engine's URL template.
 
@@ -374,35 +374,38 @@ def get_search_results_detailed(refined_query, max_workers=5, per_host_limit=Non
     def count(status):
         return sum(1 for record in engines if record["status"] == status)
     try:
-        search_dump_dir = "/app/investigations/searches"
-        os.makedirs(search_dump_dir, exist_ok=True)
-        ts = int(time.time() * 1000)
-        dump_file = os.path.join(search_dump_dir, f"search_{ts}.json")
+        inv_dir = os.environ.get("INVESTIGATION_DIR")
+        if inv_dir and os.path.isdir(inv_dir):
+            dump_dir = os.path.join(inv_dir, "searches")
+
+            os.makedirs(dump_dir, exist_ok=True)
+            ts = int(time.time() * 1000)
+            dump_file = os.path.join(dump_dir, f"search_{ts}.json")
         
-        search_payload = {
-            "refined_query": refined_query,
-            "encoded_query": query,
-            "engines_queried": len(DEFAULT_SEARCH_ENGINES),
-            "engines_answered": count(ENGINE_OK),
-            "engines_empty": count(ENGINE_EMPTY),
-            "engines_failed": count(ENGINE_FAILED),
-            "results_raw": len(raw),
-            "results_dropped_abuse": len(raw) - len(clean),
-            "results_after_dedup": len(deduped),
-            "results_kept_after_limit": len(kept),
-            "distinct_hosts": len({_result_host(r.get("link")) for r in kept}),
-            "results_kept": kept,
-            "all_deduped_uncapped": deduped,
-            # Pages that were found & safe, but dropped due to per-host limits:
-            "per_host_limit": limit,
-            # Per engine, in the order SEARCH_ENGINES lists them. The links
-            # themselves are in "results", not repeated here.
-            "engines": [{k: v for k, v in record.items() if k != "links"}
-                        for record in engines],
-        }
-        with open(dump_file, "w", encoding="utf-8") as f:
-            json.dump(search_payload, f, indent=2, ensure_ascii=False)
-        print(f"[search.py search_result save] {refined_query} -> {dump_file} ({len(deduped)} total, {len(kept)} kept)", flush=True)
+            search_payload = {
+                "refined_query": refined_query,
+                "encoded_query": query,
+                "engines_queried": len(DEFAULT_SEARCH_ENGINES),
+                "engines_answered": count(ENGINE_OK),
+                "engines_empty": count(ENGINE_EMPTY),
+                "engines_failed": count(ENGINE_FAILED),
+                "results_raw": len(raw),
+                "results_dropped_abuse": len(raw) - len(clean),
+                "results_after_dedup": len(deduped),
+                "results_kept_after_limit": len(kept),
+                "distinct_hosts": len({_result_host(r.get("link")) for r in kept}),
+                "results_kept": kept,
+                "all_deduped_uncapped": deduped,
+                # Pages that were found & safe, but dropped due to per-host limits:
+                "per_host_limit": limit,
+                # Per engine, in the order SEARCH_ENGINES lists them. The links
+                # themselves are in "results", not repeated here.
+                "engines": [{k: v for k, v in record.items() if k != "links"}
+                            for record in engines],
+            }
+            with open(dump_file, "w", encoding="utf-8") as f:
+                json.dump(search_payload, f, indent=2, ensure_ascii=False)
+            print(f"[search.py search_result save] {refined_query} -> {dump_file} ({len(deduped)} total, {len(kept)} kept)", flush=True)
 
     except Exception as e:
         print(f"[search.py search_result error] {e}", flush=True)

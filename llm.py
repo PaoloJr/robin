@@ -24,16 +24,18 @@ import time
 
 warnings.filterwarnings("ignore")
 
-LLM_DUMP_DIR = "/app/investigations/llm_traces"
-
 def _llm_save_trace(stage, payload):
     try:
-        os.makedirs(LLM_DUMP_DIR, exist_ok=True)
-        ts = int(time.time() * 1000)
-        path = os.path.join(LLM_DUMP_DIR, f"{ts}_{stage}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
-        print(f"[llm.py save_trace saved] {stage} -> {path}", flush=True)
+        inv_dir = os.environ.get("INVESTIGATION_DIR")
+        if inv_dir and os.path.isdir(inv_dir):
+            dump_dir = os.path.join(inv_dir, "llm")
+
+            os.makedirs(dump_dir, exist_ok=True)
+            ts = int(time.time() * 1000)
+            path = os.path.join(dump_dir, f"{ts}_{stage}.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+            print(f"[llm.py save_trace saved] {stage} -> {path}", flush=True)
     except Exception as e:
         print(f"[llm.py save_trace error] {stage}: {e}", flush=True)
 

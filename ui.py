@@ -24,7 +24,8 @@ from store import load_investigations
 from langchain_core.messages import HumanMessage, AIMessage
 from config import DEPTH_LIMITS, RobinConfig
 from health import check_llm_health, check_search_engines, check_tor_proxy
-
+import os
+from urllib.parse import quote_plus
 
 def _render_pipeline_error(stage: str, err: Exception) -> None:
     message = str(err).strip() or err.__class__.__name__
@@ -665,6 +666,12 @@ if _do_run:
             _summary_view["slot"].markdown(_summary_view["text"])
 
     try:
+        inv_dir = f"/app/investigations/{quote_plus(query.strip())}"
+        os.environ["INVESTIGATION_DIR"] = inv_dir
+
+        for sub in ("searches", "scraped", "llm", "pipeline"):
+            os.makedirs(os.path.join(inv_dir, sub), exist_ok=True)
+
         investigation = run_investigation(
             _robin_cfg, query, model,
             preset=selected_preset,

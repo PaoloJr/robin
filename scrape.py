@@ -553,34 +553,33 @@ def _record(status, title, text="", http_status=None, detail="", links=None):
         "links": list(links or []),
     }
 
-
-DUMP_DIR = "/app/investigations/scraped"
-
 def _save_scraped_page(url, final_url, title, html, text, links):
     try:
-        os.makedirs(DUMP_DIR, exist_ok=True)
-        # Create a safe, unique filename using timestamp + URL hash
-        url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-        ts = int(time.time() * 1000)
-        base_path = os.path.join(DUMP_DIR, f"{ts}_{url_hash}")
 
-        # 1. Save metadata and full extracted text (pre-8k truncation)
-        meta = {
-            "requested_url": url,
-            "final_url": final_url,
-            "title": title,
-            "extracted_text": text,
-            "onion_links": links,
-            "timestamp": ts,
-        }
-        with open(f"{base_path}.json", "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2, ensure_ascii=False)
+        inv_dir = os.environ.get("INVESTIGATION_DIR")
+        if inv_dir and os.path.isdir(inv_dir):
+            dump_dir = os.path.join(inv_dir, "scraped")
+        
+            os.makedirs(dump_dir, exist_ok=True)
+            url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+            ts = int(time.time() * 1000)
+            base_path = os.path.join(dump_dir, f"{ts}_{url_hash}")
 
-        # 2. Save the raw HTML
-        with open(f"{base_path}.html", "w", encoding="utf-8") as f:
-            f.write(html)
+            meta = {
+                "requested_url": url,
+                "final_url": final_url,
+                "title": title,
+                "extracted_text": text,
+                "onion_links": links,
+                "timestamp": ts,
+            }
+            with open(f"{base_path}.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2, ensure_ascii=False)
 
-        print(f"[scrape.py scraped_page save] {url} -> {base_path}.json/.html", flush=True)
+            with open(f"{base_path}.html", "w", encoding="utf-8") as f:
+                f.write(html)
+
+            print(f"[scrape.py scraped_page save] {url} -> {base_path}.json/.html", flush=True)
     except Exception as e:
         print(f"[scrape.py scraped_page error] {url}: {e}", flush=True)
 
@@ -719,11 +718,14 @@ def scrape_multiple_detailed(urls_data, max_workers=5, max_return_chars=None,
                 if url:
                     results[url] = _record(STATUS_ERROR, title, detail=str(exc)[:200])
                 continue
-    os.makedirs(DUMP_DIR, exist_ok=True)
-    dump_path = f"{DUMP_DIR}/batch_{int(time.time())}.json"
-    with open(dump_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
-    print(f"[scrape.py scrape_multiple batch] of {len(results)} results to {dump_path}", flush=True)
+        inv_dir = os.environ.get("INVESTIGATION_DIR")
+        if inv_dir and os.path.isdir(inv_dir):
+            dump_dir = os.path.join(inv_dir, "scraped")
+            os.makedirs(dump_dir, exist_ok=True)
+            dump_path = f"{dump_dir}/batch_{int(time.time())}.json"
+            with open(dump_path, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
+            print(f"[scrape.py scrape_multiple batch] of {len(results)} results to {dump_path}", flush=True)
     return results
 
 

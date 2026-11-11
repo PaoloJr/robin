@@ -27,6 +27,7 @@ from scrape import scrape_multiple
 from search import engines_unreachable, get_search_results_detailed
 from pathlib import Path
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -149,32 +150,35 @@ def _preset_label(preset: str) -> str:
 def _now() -> str:
     return datetime.now().isoformat()
 
-PIPELINE_DUMP_FILE = "/app/investigations/"
 
 def _save_stage_dump(stage_name: str, inv: Investigation) -> None:
-    ts = int(datetime.now().timestamp() * 1000)
-    dump_file = Path(PIPELINE_DUMP_FILE) / "pipeline" / f"{ts}_{stage_name}.json"
-    record = inv.to_record()
-    data = {
-        "stage": stage_name,
-        **record,
-        "search_stats": inv.search_stats,
-        "results": inv.results,
-        "scraped": inv.scraped,
-        "saved_as": inv.saved_as,
-    }
-    try:
-        dump_file.parent.mkdir(parents=True, exist_ok=True)
-        dump_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(
-            f"[pipeline.py {stage_name} save] {inv.refined or inv.query} -> {dump_file} "
-            f"({record['results_count']} results, {len(inv.filtered)} filtered, "
-            f"{record['scraped_count']} scraped, status={inv.status})",
-            flush=True,
-        )
-    except Exception as exc:
-        print("Failed to save pipeline dump at %s: %s", stage_name, exc)
-
+    inv_dir = os.environ.get("INVESTIGATION_DIR")
+    if inv_dir and os.path.isdir(inv_dir):
+        dump_dir = os.path.join(inv_dir, "llm")
+        os.makedirs(dump_dir, exist_ok=True)
+        ts = int(datetime.now().timestamp() * 1000)
+        dump_file = Path(dump_dir) / "pipeline" / f"{ts}_{stage_name}.json"
+        record = inv.to_record()
+        data = {
+            "stage": stage_name,
+            **record,
+            "search_stats": inv.search_stats,
+            "results": inv.results,
+            "scraped": inv.scraped,
+            "saved_as": inv.saved_as,
+        }
+        try:
+            dump_file.parent.mkdir(parents=True, exist_ok=True)
+            dump_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(
+                f"[pipeline.py {stage_name} save] {inv.refined or inv.query} -> {dump_file} "
+                f"({record['results_count']} results, {len(inv.filtered)} filtered, "
+                f"{record['scraped_count']} scraped, status={inv.status})",
+                flush=True,
+            )
+        except Exception as exc:
+            print("Failed to save pipeline dump at %s: %s", stage_name, exc)
+    
 def run_investigation(cfg: Optional[RobinConfig],
                       query: str,
                       model: str,
