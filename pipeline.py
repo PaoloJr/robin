@@ -154,10 +154,10 @@ def _now() -> str:
 def _save_stage_dump(stage_name: str, inv: Investigation) -> None:
     inv_dir = os.environ.get("INVESTIGATION_DIR")
     if inv_dir and os.path.isdir(inv_dir):
-        dump_dir = os.path.join(inv_dir, "llm")
+        dump_dir = os.path.join(inv_dir, "pipeline")
         os.makedirs(dump_dir, exist_ok=True)
         ts = int(datetime.now().timestamp() * 1000)
-        dump_file = Path(dump_dir) / "pipeline" / f"{ts}_{stage_name}.json"
+        dump_file = Path(dump_dir)/f"{ts}_{stage_name}.json"
         record = inv.to_record()
         data = {
             "stage": stage_name,
