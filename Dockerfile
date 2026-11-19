@@ -7,11 +7,14 @@ LABEL io.modelcontextprotocol.server.name="io.github.apurvsinghgautam/robin"
 RUN DEBIAN_FRONTEND="noninteractive" apt-get update && \
     apt-get install -y --no-install-recommends \
       tor \
+	  nyx \
       build-essential \
       curl \
       libssl-dev \
       libffi-dev && \
     rm -rf /var/lib/apt/lists/*
+
+RUN printf "\nControlPort 9051\nCookieAuthentication 1\n" >> /etc/tor/torrc
 
 # Everything past the install runs as this user. UID/GID 1000 is the first
 # non-system id on Linux, so a bind mount created by a typical desktop user is
